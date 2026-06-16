@@ -22,7 +22,18 @@ class GSTCalculator(TaxCalculator):
         #   - Validate each rate is Decimal in [0, 1].
         #   - Validate cgst + sgst == igst (sanity check on Indian GST setup).
         #   - Store on self.
-        raise NotImplementedError("Day 1: implement GSTCalculator.__init__")
+        for r in (cgst, sgst, igst):
+            if isinstance(r, float):
+                raise TypeError("Rates must be Decimal instances")
+            if r < Decimal("0") or r > Decimal("1"):
+                raise ValueError("Rates must fall within 0 and 1 inclusive")
+                
+        if (cgst + sgst) != igst:
+            raise ValueError("cgst + sgst must perfectly match igst")
+            
+        self.cgst_rate = cgst
+        self.sgst_rate = sgst
+        self.igst_rate = igst
 
     def apply(self, taxable: Money, context: TaxContext) -> TaxBreakdown:
         # TODO Day 1
@@ -30,4 +41,25 @@ class GSTCalculator(TaxCalculator):
         #     intra = bool(context.customer_state) and context.customer_state == context.seller_state
         #   - If intra: components = [("CGST X%", taxable*cgst), ("SGST Y%", taxable*sgst)], total = sum
         #   - Else:     components = [("IGST Z%", taxable*igst)],                            total = igst leg
-        raise NotImplementedError("Day 1: implement GSTCalculator.apply")
+        intra = bool(context.customer_state) and context.customer_state == context.seller_state
+        
+        if intra:
+            cgst_amt = taxable * self.cgst_rate
+            sgst_amt = taxable * self.sgst_rate
+            
+            c_lbl = f"CGST {self.cgst_rate * Decimal('100'):g}%"
+            s_lbl = f"SGST {self.sgst_rate * Decimal('100'):g}%"
+            
+            return TaxBreakdown(
+                components={c_lbl: cgst_amt, s_lbl: sgst_amt},
+                total=cgst_amt + sgst_amt
+            )
+        else:  
+            igst_amt = taxable * self.igst_rate
+            i_lbl = f"IGST {self.igst_rate * Decimal('100'):g}%"
+            
+            return TaxBreakdown(
+                components={i_lbl: igst_amt},
+                total=igst_amt
+            )
+        
