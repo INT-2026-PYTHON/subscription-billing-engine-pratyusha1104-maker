@@ -16,9 +16,10 @@ from billing_engine.db import (
     UsageRecordRepository, InvoiceRepository, InvoiceLineItemRepository,
     LedgerRepository,
 )
-from billing_engine.models import Subscription
+from billing_engine.models import (Subscription,Invoice,InvoiceStatus,InvoiceLineItem,LineItemKind)
+from billing_engine.billing.proration import compute_proration
 from billing_engine.models.ledger import LedgerDirection, LedgerEntry
-from billing_engine_starter.billing_engine.money import Money
+from billing_engine.money import Money
 @dataclass
 class BillingResult:
     invoices_created: int
@@ -156,3 +157,94 @@ class BillingCycle:
             invoices_skipped_duplicate=invoices_skipped_duplicate, 
             trials_activated=trials_activated
         )
+    
+    def upgrade_subscription(
+            self,
+            subscription_id: int,
+            new_plan_id: int,
+            switch_date: date,):
+        with self.db.transaction() as conn:
+            subscription = self.subscription_repo.get(subscription_id)
+            
+            old_plan = self.plan_repo.get(subscription.plan_id)
+            new_plan = self.plan_repo.get(new_plan_id)
+            customer = self.customer_repo.get(subscription.customer_id)
+            
+            old_price = Money(
+                str(old_plan.price),
+                old_plan.currency
+            )
+            
+            new_price = Money(
+                str(new_plan.price),
+                new_plan.currency
+            )
+            
+            tax_calc, tax_context = self.tax_factory(customer)
+            pr = compute_proration(
+                old_price,
+                new_price,
+                subscription.current_period_start,
+                subscription.current_period_end,
+                switch_date,
+                tax_calc,
+                tax_context,
+            )
+            
+            
+            invoice = self.invoice_repo.add(
+                Invoice(
+                    id=None,subscription_id=subscription_id,
+                    period_start=subscription.current_period_start,
+                    period_end=subscription.current_period_end,
+                    subtotal=pr.charge_amount - pr.credit_amount,
+                    discount_total=Money("0", old_plan.currency),
+                    tax_total=pr.charge_tax - pr.credit_tax,
+                    total=pr.charge_amount - pr.credit_amount,
+                    status=InvoiceStatus.ISSUED,
+                )
+            )
+
+
+            self.line_item_repo.add(
+                InvoiceLineItem(
+                    id=None,
+                    invoice_id=invoice.id,
+                    description="Proration credit",
+                    amount=Money(
+                        str(-pr.credit_amount.amount),
+                        pr.credit_amount.currency
+                    ),
+                    kind=LineItemKind.PRORATION_CREDIT,
+                )
+            )
+
+
+            self.line_item_repo.add(
+                InvoiceLineItem(
+                    id=None,
+                    invoice_id=invoice.id,
+                    description="Proration charge",
+                    amount=pr.charge_amount,
+                    kind=LineItemKind.PRORATION_CHARGE,
+                )
+            )
+            
+            
+            self.ledger_repo.add(
+                LedgerEntry(
+                    id=None,
+                    invoice_id=invoice.id,
+                    customer_id=subscription.customer_id,
+                    amount=invoice.total,
+                    direction=LedgerDirection.DEBIT,
+                    reason=f"Upgrade invoice #{invoice.id}",
+                )
+            )
+            
+            
+            self.subscription_repo.update_plan(
+                subscription_id,
+                new_plan_id
+            )
+    

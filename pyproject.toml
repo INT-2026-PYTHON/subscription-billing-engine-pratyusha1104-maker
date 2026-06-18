@@ -21,4 +21,5 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
+where = ["billing_engine_starter"]
 include = ["billing_engine*"]
