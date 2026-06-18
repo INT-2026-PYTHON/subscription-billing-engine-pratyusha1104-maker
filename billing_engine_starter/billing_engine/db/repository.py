@@ -546,7 +546,7 @@ class InvoiceLineItemRepository:
                 id=row["id"],
                 invoice_id=row["invoice_id"],
                 description=row["description"],
-                amount=Money(row["amount"],"USD"),
+                amount=Money(row["amount"],"INR"),
                 kind=LineItemKind(row["kind"])
             ) 
             for row in rows

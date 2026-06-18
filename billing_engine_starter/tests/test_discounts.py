@@ -40,7 +40,7 @@ class TestPercentageDiscount:
 
     def test_currency_preserved(self):
         d = PercentageDiscount(Decimal("0.10"))
-        assert d.apply(Money("100", "USD"), DiscountContext(0)).currency == "USD"
+        assert d.apply(Money("100", "INR"), DiscountContext(0)).currency == "INR"
 
 
 # ========================================================
